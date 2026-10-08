@@ -22,22 +22,28 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Flutter project found at: $PROJECT_DIR"
 
-      - name: Update file_picker
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          sed -i 's/file_picker: \^8\.1\.2/file_picker: ^10.3.6/' pubspec.yaml
-          grep "file_picker:" pubspec.yaml
-
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
 
-      - name: Prepare Android project
+      - name: Prepare project
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           flutter create --platforms=android .
+          flutter pub remove file_picker || true
+          flutter pub add file_picker:^10.3.6
+          rm -f pubspec.lock
           flutter pub get
+
+      - name: Verify file_picker
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "===== file_picker in pubspec ====="
+          grep "file_picker:" pubspec.yaml || true
+
+          echo "===== file_picker dependency ====="
+          flutter pub deps | grep -A 2 -B 2 "file_picker" || true
 
       - name: Install Android SDK 36
         run: |
@@ -62,12 +68,12 @@ jobs:
       - name: Verify compileSdk
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          echo "===== Android build.gradle.kts ====="
+          echo "===== compileSdk ====="
+
           if [ -f android/app/build.gradle.kts ]; then
             grep -n "compileSdk" android/app/build.gradle.kts || true
           fi
 
-          echo "===== Android build.gradle ====="
           if [ -f android/app/build.gradle ]; then
             grep -n "compileSdk" android/app/build.gradle || true
           fi
@@ -75,6 +81,8 @@ jobs:
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
+          flutter clean
+          flutter pub get
           flutter build apk --release
 
       - name: Upload APK
