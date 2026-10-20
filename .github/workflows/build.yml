@@ -31,19 +31,28 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           flutter create --platforms=android .
-          flutter pub remove file_picker || true
-          flutter pub add file_picker:^10.3.6
+          rm -f test/widget_test.dart
           rm -f pubspec.lock
           flutter pub get
 
-      - name: Verify file_picker
+      - name: Verify dependencies
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          echo "===== file_picker in pubspec ====="
-          grep "file_picker:" pubspec.yaml || true
-
-          echo "===== file_picker dependency ====="
+          echo "===== file_picker (pinned once, in pubspec.yaml) ====="
+          grep "file_picker:" pubspec.yaml
           flutter pub deps | grep -A 2 -B 2 "file_picker" || true
+
+      - name: Restore app icon (flutter create must not leave the default icon)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          cp -r design/android_res/. android/app/src/main/res/
+
+      - name: Set launcher label to SceneSheet
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          sed -i 's/android:label="[^"]*"/android:label="SceneSheet"/' android/app/src/main/AndroidManifest.xml
+          grep -n 'android:label' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:label="SceneSheet"' android/app/src/main/AndroidManifest.xml
 
       - name: Install Android SDK 36
         run: |
@@ -78,12 +87,28 @@ jobs:
             grep -n "compileSdk" android/app/build.gradle || true
           fi
 
+      - name: Analyze (compile errors fail the build)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Run tests (a failing test fails the build)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter test
+
+      - name: Compute build number
+        run: |
+          # Minutes since 2026-01-01 UTC: always increasing, independent of run counters or reruns,
+          # and far above any earlier versionCode (1 or a small run number).
+          BUILD_NUMBER=$(( ($(date -u +%s) - 1767225600) / 60 + 1 ))
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "Build number: $BUILD_NUMBER"
+
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           flutter clean
           flutter pub get
-          flutter build apk --release
+          flutter build apk --release --build-number=$BUILD_NUMBER
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
